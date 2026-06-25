@@ -1,1 +1,176 @@
 
+
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
+// // WiFi Credentials
+// const char* ssid = "vivo";
+// const char* password = "12345678";
+// WiFi Credentials
+const char* ssid = "Cluix_4G";
+const char* password = "Cluix@0707";
+// AWS MQTT Details
+const char* mqtt_server = "a29c1batu88skp-ats.iot.ap-south-1.amazonaws.com";
+const int mqtt_port = 8883;
+//const char* topic = "device/SN0007/telemetry"; 
+
+const char* topic = "device/SN00014/telemetry"; 
+
+// --- Certificates (Paste your actual keys inside the quotes) ---
+const char* root_ca = 
+"-----BEGIN CERTIFICATE-----\n"
+"MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF\n"
+"ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6\n"
+"b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL\n"
+"MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv\n"
+"b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj\n"
+"ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM\n"
+"9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw\n"
+"IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6\n"
+"VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L\n"
+"93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm\n"
+"jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC\n"
+"AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA\n"
+"A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI\n"
+"U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs\n"
+"N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv\n"
+"o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU\n"
+"5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy\n"
+"rqXRfboQnoZsG4q5WTP468SQvvG5\n"
+"-----END CERTIFICATE-----\n";
+
+const char* device_cert = 
+"-----BEGIN CERTIFICATE-----\n"
+"MIIDWTCCAkGgAwIBAgIUbpQo6CNfbagQ3L+gHdRZit0w8w0wDQYJKoZIhvcNAQEL\n"
+"BQAwTTFLMEkGA1UECwxCQW1hem9uIFdlYiBTZXJ2aWNlcyBPPUFtYXpvbi5jb20g\n"
+"SW5jLiBMPVNlYXR0bGUgU1Q9V2FzaGluZ3RvbiBDPVVTMB4XDTI2MDIwOTA3NDAy\n"
+"MloXDTQ5MTIzMTIzNTk1OVowHjEcMBoGA1UEAwwTQVdTIElvVCBDZXJ0aWZpY2F0\n"
+"ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMrLd6IXG1SaJWy4pAGq\n"
+"sDyLt9LxE7vwcsoaTHNp0inVjlcWS/IXVgfBIjyHajiXptNjCack65tm5mADmB12\n"
+"zVaTljJu4B6DA4dStisYPDjk1BIQMnn86jEYhw2a9b+wvn/IB9h9V1niCJbNirCk\n"
+"RoiK26A4o4VynZTUNjZqycM2wQZFiXONrZAbxSrmYN7QNWtg1RE0IpoQXlU3P0rf\n"
+"bSa18aME5aYWgE5zXZF39KiaEmGL6n/v9Yl4KzrUdhYUhJPmAfSXOF7/C4HI+Qbq\n"
+"R8H1xyi53BcuTo3T75sHxvPlkcjURa7AWsMLaktNNJ+r5ExcaV174HXCKjxeBO/e\n"
+"FYkCAwEAAaNgMF4wHwYDVR0jBBgwFoAUW7Uy0wnZxGg8XIRU0iIWFbz5NqAwHQYD\n"
+"VR0OBBYEFOmO11KPF76EZ4FVqVZA+R2pye5pMAwGA1UdEwEB/wQCMAAwDgYDVR0P\n"
+"AQH/BAQDAgeAMA0GCSqGSIb3DQEBCwUAA4IBAQBa6OLsMJeaM7qgKY8OfyKGK+h/\n"
+"NHPFj13N9F3OdODfDiy/vQ912zZ4WlofFiCqzxxhLyKahld6mMp1w7qg5BLK2tTV\n"
+"lBTL36vy4FndF9U3fou8+WkBmZFL74UakdWwSRIi9qY4uf+fy16IV0huuIANeuk/\n"
+"mf4j/oEVoHjZMY9RQ7amB+Ln8eattRCANuEhO153KFhx1naxIDsTfqlbUUaXENuq\n"
+"J0I9RIhiJeWEYnYGBi3BZX6WY73D7SyIq9W6CivdILPwbrX9G50+QRt2/3E2ixbZ\n"
+"LreKiphC5Wgmf03vRET4SrtAQVgefiIBUaW7gk7iJmoyY1YUqeYKA+zEYiIc\n"
+"-----END CERTIFICATE-----\n";
+
+const char* private_key = 
+"-----BEGIN RSA PRIVATE KEY-----\n"
+"MIIEpAIBAAKCAQEAyst3ohcbVJolbLikAaqwPIu30vETu/ByyhpMc2nSKdWOVxZL\n"
+"8hdWB8EiPIdqOJem02MJpyTrm2bmYAOYHXbNVpOWMm7gHoMDh1K2Kxg8OOTUEhAy\n"
+"efzqMRiHDZr1v7C+f8gH2H1XWeIIls2KsKRGiIrboDijhXKdlNQ2NmrJwzbBBkWJ\n"
+"c42tkBvFKuZg3tA1a2DVETQimhBeVTc/St9tJrXxowTlphaATnNdkXf0qJoSYYvq\n"
+"f+/1iXgrOtR2FhSEk+YB9Jc4Xv8Lgcj5BupHwfXHKLncFy5OjdPvmwfG8+WRyNRF\n"
+"rsBawwtqS000n6vkTFxpXXvgdcIqPF4E794ViQIDAQABAoIBAG2D89dVIy1NEWjl\n"
+"TayYwRPxYBRKnJ2h/FuoWCD7xMNS0Mu2/sx+TbdiVVraxkJJo44ErfHVvmbt6vtu\n"
+"9Xbz8XAPw8z4k4/msMEjqb0cGWmgKeaXWKsIKnDZDhYK2SvsBvR60cHX7pRbvMez\n"
+"uHIsROr4EiM0cxpeCzuUXrKEePEyaWwqLjtn1ti88viGEHAV6EUO3+xvFA9PkGR8\n"
+"r7mt+Qyh4EmX8+dn1UFbmVllqk30vQ10S6GAcxgTcO61AfUHd1PWNvgygzPaCzHO\n"
+"sFgU6kHX0nIuxZ9M732PhesTHG7bYeHNQiWLuFJoMdEp0F8eDJvwtthWzEThBuro\n"
+"unUK5AECgYEA+aA+yWqMqsOVRdbAKtdS67oow6MvGLpMfHtMRMWIsWb9bYM0vLut\n"
+"1ZFbJ7/ncIpWzuimbq+b2SdFjWpkhflAqTJHxCtXioDbjQuNDYNErP3Pfd5l3qcU\n"
+"Xk5yVjJ/8Y3MBOxLJ7VDQXHUu59P3Eg2xD7N4jMj5jsD5qVFbUp15A0CgYEAz/kY\n"
+"nQsosNsyKNZIZyvIkbbWldyNIuJI+gKPoqJJ3gtySfGTiL8n4YeBGh9YAwzo6aXo\n"
+"FGw/l87wWjYB3yShE6lGNOLfbFEyUIvN9WsS1shNBo5esldujC3MDEEAJBUldx/I\n"
+"R0VPDYatn+f4eSUgF8OB5JyWq8tQAGENNjcw7G0CgYEAwDTQ44m1Mi9SmunWIaaW\n"
+"ZId8p9bYhrO7/QV7HmDy9ZYVgONMEh54pT887whmjlMWsE6XCBcTa0s/1LmdGUNo\n"
+"tF7Qv42X5D9/zcSdIVB36rOrtoEt8xi3KD5C73gG59mExC2lWLfLR3L8mFL8zOKV\n"
+"uNma8ZbrB3VddZTANnzk9WkCgYEAgdAe/+92L6YyUfEm8lcO830nxhULd4m9OWid\n"
+"1UrtRo7ogKUsjL+cmhZljDOiUQ0e2LB5Az5qF0zRE84ALxODA222Z85w3QB1oncR\n"
+"UK3L7YrLIVt+Wl1eoFr5sXBlMSCN6SRKc8ocRPoap+Q4YQ2+UXb0PglLtuHKBuKN\n"
+"R5j9jaUCgYAV7pBfyxGdhmhFeu9CbhJQuQPjJxNamejYd8C3NVR5T17fv+/QtkaI\n"
+"Bffrna90CId9qv8PGR2P/G6TLd0HsY3zEbedIhm5FEB771Flz1yHr3gGlI2EfD7V\n"
+"KWHf/QdUjSydZNiuWgvpt4FE/3ER+zoykKn0o+jmij6i+Npm/yu3Vw==\n"
+"-----END RSA PRIVATE KEY-----\n";
+
+// Timing variables
+unsigned long lastTime = 0;
+const unsigned long interval = 60000; // 2 Minutes
+
+WiFiClientSecure net;
+PubSubClient client(net);
+
+void setup_wifi() {
+  Serial.print("Connecting WiFi...");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500); Serial.print(".");
+  }
+  Serial.println("Connected!");
+}
+
+void connectAWS() {
+  net.setCACert(root_ca);
+  net.setCertificate(device_cert);
+  net.setPrivateKey(private_key);
+  client.setServer(mqtt_server, mqtt_port);
+
+  while (!client.connected()) {
+    Serial.print("Connecting MQTT...");
+    if (client.connect("ESP32_SN00012")) {
+      Serial.println("Connected!");
+    } else {
+      Serial.print("Failed: ");
+      Serial.println(client.state());
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  setup_wifi();
+  connectAWS();
+  
+  // Trick the timer so it sends the first data 1 second after connecting
+  lastTime = millis() - (interval - 1000); 
+  
+  randomSeed(analogRead(0));
+}
+
+void loop() {
+  if (!client.connected()) connectAWS();
+  client.loop();
+
+  unsigned long currentTime = millis();
+
+  // Trigger Logic: 1st send after 1s, then every 2 mins
+  if (currentTime - lastTime >= interval) {
+    lastTime = currentTime; 
+
+    Serial.println("published data..");
+
+    StaticJsonDocument<300> doc;
+    doc["signature"] = "test-signature-xyz";
+    doc["pH"] = random(60, 81) / 10.0;
+    doc["EC"] = random(300, 801);
+    doc["TDS"] = random(400, 601);
+    doc["BOD"] = random(20, 40) / 10.0;
+    doc["orp"] = random(150, 401);
+
+    //  doc["COD"] = random(15, 25);
+    //  doc["TOC"] = random(40, 60) / 10.0;
+    //doc["Turbidity"] = random(10, 30) / 10.0;
+    //doc["Temp1"] = random(250, 300) / 10.0;
+    doc["Salinity"] = random(10, 50) / 100.0;
+
+    char jsonBuffer[512];
+    serializeJson(doc, jsonBuffer);
+
+    if (client.publish(topic, jsonBuffer)) {
+      Serial.println("Data Published Successfully:");
+      Serial.println(jsonBuffer);
+    } else {
+      Serial.println("Error: Publish failed");
+    }
+  }
+}
