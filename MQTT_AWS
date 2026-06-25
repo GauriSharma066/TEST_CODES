@@ -1,0 +1,178 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <time.h>
+
+// WiFi
+const char* ssid = "vivo";
+const char* password = "12345678";
+
+// AWS Endpoint
+const char* awsEndpoint = "a1idfzopu96alg-ats.iot.us-east-1.amazonaws.com";
+
+// Topic
+const char* topic = "esp32/data";
+/* Certificates */
+// Amazon Root CA 1
+static const char AWS_CERT_CA[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF
+ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
+b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL
+MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv
+b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj
+ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM
+9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw
+IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6
+VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L
+93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm
+jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC
+AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA
+A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI
+U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs
+N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv
+o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU
+5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy
+rqXRfboQnoZsG4q5WTP468SQvvG5
+-----END CERTIFICATE-----
+)EOF";
+
+// Device Certificate                                               //change this
+static const char AWS_CERT_CRT[] PROGMEM = R"KEY(
+-----BEGIN CERTIFICATE-----
+MIIDWTCCAkGgAwIBAgIUUlC99itRN1TKzRpAil817VXAf68wDQYJKoZIhvcNAQEL
+BQAwTTFLMEkGA1UECwxCQW1hem9uIFdlYiBTZXJ2aWNlcyBPPUFtYXpvbi5jb20g
+SW5jLiBMPVNlYXR0bGUgU1Q9V2FzaGluZ3RvbiBDPVVTMB4XDTI2MDMxODA5NTQz
+NFoXDTQ5MTIzMTIzNTk1OVowHjEcMBoGA1UEAwwTQVdTIElvVCBDZXJ0aWZpY2F0
+ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANdQ1R87TyqUXSfq7GB9
+xuyzliyVQ5HMydBWVJFyOMT3P3YTFxaKrlrpO7PPHc+Suql+OKLz24fYrGTqhv7n
+6EEGvcD0pAx2oxLGpT0bxSMyWXS5ldzvbJcfJ0zdlSL6iI+MShTA1vWC1ZkRh2Cb
+aQGb4HX0W7i0aq8TIPJlyLHqJB/1aRO25NH7SxSYhAdUH+CfIZRXgvHXKd93+mwq
+gXLiKpdQI7oReFzmo2Ywl+TBBicF5cP0TGwyXwPghoTYn0fueRzb56YCEJDbGpn8
+41dCvf0gc7CShnsYy7q7fXMnvzZEyZoo+NmTkRDfEqeSu0zbbI7ZmUYN8QoIy3dp
+uncCAwEAAaNgMF4wHwYDVR0jBBgwFoAU7baYIzynN6sAFRPpV5KdCOInhKYwHQYD
+VR0OBBYEFMBQbEFvD2frzBa/4qWjb/mu2cxFMAwGA1UdEwEB/wQCMAAwDgYDVR0P
+AQH/BAQDAgeAMA0GCSqGSIb3DQEBCwUAA4IBAQChDsmmvMXLyFVCAUfdrNJR6IdL
+yJKtYUWrioXMb+fUMEkZRPOQ8gN+u8GDvb65zj2ojbxREu4Mi9lTmBKltxXOCFT6
+9NsGVxIbzCwiQ3de3SOfmUj7QGYeRLDPunxFkyJgwEGOuHfFTu6eAaN0ttq+Y4ud
+fT3DpmHooSt4GNowwEScEwQUZMDXV5I9ntH0AktJz5ktotkEg8Og/5jFit2AH3q+
+2lVULOfcEvisXTZTsOMa8sc5tVzrwj8iQVpG4OdNUvC+BrSwpg1JGbJXN/rGX1Kg
+5H+GaWAaqgV3Wt4DPkRlJMMB71ah6Zwi3jQ4oB7Li9HEhXonL+7+SOJGuTyi
+-----END CERTIFICATE-----
+)KEY";
+
+// Device Private Key                                               //change this
+static const char AWS_CERT_PRIVATE[] PROGMEM = R"KEY(
+-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEA11DVHztPKpRdJ+rsYH3G7LOWLJVDkczJ0FZUkXI4xPc/dhMX
+FoquWuk7s88dz5K6qX44ovPbh9isZOqG/ufoQQa9wPSkDHajEsalPRvFIzJZdLmV
+3O9slx8nTN2VIvqIj4xKFMDW9YLVmRGHYJtpAZvgdfRbuLRqrxMg8mXIseokH/Vp
+E7bk0ftLFJiEB1Qf4J8hlFeC8dcp33f6bCqBcuIql1AjuhF4XOajZjCX5MEGJwXl
+w/RMbDJfA+CGhNifR+55HNvnpgIQkNsamfzjV0K9/SBzsJKGexjLurt9cye/NkTJ
+mij42ZOREN8Sp5K7TNtsjtmZRg3xCgjLd2m6dwIDAQABAoIBAFzPOd5JeVlYNENV
+jugUrx8uVcgH2uVIyaDk5XUAMBounQsvNV+BDaCgMhzSZP4pOA6BGraauID40254
+bRIJMmJ9HmPCz8eTh707JNSPWM1QEaEvsbpW9Y66Xf1S8crvBNgjV3dUnBOdfqaJ
+GLp6oquP3hPZ7YNTOT0X2LbDStvsz1/vbnYXZI65PfEzrbOFU92iIlcvy0eWc0H5
+IZO5eW6UZhnmF9ODZ6frXMTKPQielpyuIj/ROYqaZzkIk9PNO+HT+8EkhTlCdl0I
+W5a9lD1lW37E0nJlB/qQNf5J5fn9EEc5EutATU5i1IQn2wrzKLrFTZFuXl2Ar4TF
+v9ovveECgYEA9g9+wfaS3IYm/2tnDsKKZ4bSWC3kJgTjAqcqHM4ihzFd3WAqwO6G
+CFTsDtoegEsjb1t31A34rLx0dmfHIKO/XBaqnrU2YQrKihIcXaOCgvvA9rnehTB0
+vykI6ctHmPrj5xG7IXVz03LlJEn8YMeYixwENyygO7nbedDatc3hsMcCgYEA4ANo
+EWjUg6HzJ9VwSaQhv1s0YLNu8ghemZmcfCUV7pnyrILzPOHToprQiL8nlJaQpWIJ
+RXdG2wAm3pCXiXROO/py2EPZH39xotQM/DUdanP6jVzdWPrqLwhm90XA7/0r/8Kn
+KYpiXcVvaCMb3etW7OLOIARrzs8cyeBLfGt8WNECgYEAoRlsCFoDtVYv2jLbepJs
+Q3PF6+2/3hR8/JOtwsZDXPg5WGNKGp8QKgxPsTmllqGbRaFBRxkOoymPpqYzfW84
+Lna4pshGHisOiG9rGvOe01s471CqG9Gp3i5jo45wBfzdkb/OIQ3hE6O52pSGJGcJ
+vKpPKECTeAcrZwoS580v4qkCgYBJbZRtMHmIdEtp4TKfUOem+9RdZjOVrlyj6JA8
+uUNJJLlBBuOIL1XZ1PlJ+a6VrAzZyRrU5FYbbx9OkQK7EZ6bVmrSrNq80l+DShK/
+kQGFZWLZd3kus4CTziNCJmEpyUjk2v9ERJIdvpvX/LojsgKaP3XlVM2pyoXbPmQ/
+8lOeIQKBgEGc1nNLYdU0U7ZaSZmpeDlvZaov9hjUV/f45tYQ5byV9qA3N72kZyM/
+8aULmWMsbKpD3zpgChrnWiKZuOb537+CUqGcRo1Rnoj7Y44w/kje1Gc8fxwo7gpQ
+f63TeEicMrsjRno0hrcZpT1mSgZSNAO+0jDmUw57IeOJqVJItnI5
+-----END RSA PRIVATE KEY-----
+)KEY";
+
+WiFiClientSecure net;
+PubSubClient client(net);
+
+// 🔹 Connect WiFi + Time Sync
+void connectWiFiAndTime() {
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected");
+
+  // 🔥 TIME SYNC (VERY IMPORTANT)
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+  Serial.print("Syncing time");
+  while (time(nullptr) < 100000) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nTime Synced");
+}
+
+// 🔹 Connect AWS IoT
+void connectAWS() {
+  net.setCACert(AWS_CERT_CA);
+  net.setCertificate(AWS_CERT_CRT);
+  net.setPrivateKey(AWS_CERT_PRIVATE);
+
+  client.setServer(awsEndpoint, 8883);
+
+  Serial.print("Connecting to AWS");
+
+  while (!client.connected()) {
+    String clientId = "ESP32_" + String(random(1000));
+
+    if (client.connect(clientId.c_str())) {
+      Serial.println(" Connected!");
+    } else {
+      Serial.print(" Failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" retrying...");
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  connectWiFiAndTime();  // includes time fix
+  connectAWS();
+}
+
+void loop() {
+
+  if (!client.connected()) {
+    connectAWS();  // reconnect if disconnected
+  }
+
+  client.loop();
+
+  // Dummy data
+  float temperature = random(20, 35);
+  float humidity = random(40, 80);
+
+  String payload = "{";
+  payload += "\"temperature\": " + String(temperature) + ",";
+  payload += "\"humidity\": " + String(humidity);
+  payload += "}";
+
+  Serial.println("Publishing: " + payload);
+
+  if (client.publish(topic, payload.c_str())) {
+    Serial.println("Success");
+  } else {
+    Serial.println("Failed");
+  }
+
+  delay(5000);
+}
